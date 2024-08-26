@@ -1,0 +1,42 @@
+cmake_minimum_required(VERSION 3.5)
+project(ParalelProject)
+
+# Set the C++ standard
+set(CMAKE_CXX_STANDARD 17)
+
+# Include FetchContent module
+include(FetchContent)
+
+# Fetch GLM
+FetchContent_Declare(
+    glm
+    GIT_REPOSITORY https://github.com/g-truc/glm.git
+    GIT_TAG bf71a834948186f4097caa076cd2663c69a10e1e # refs/tags/1.0.1
+)
+FetchContent_MakeAvailable(glm)
+
+# Fetch SDL2
+FetchContent_Declare(
+    SDL2
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+    GIT_TAG release-2.28.2  # Cambia esto según la versión deseada
+)
+FetchContent_MakeAvailable(SDL2)
+
+# Check for OpenMP support
+find_package(OpenMP REQUIRED)
+
+# Define your executable
+add_executable(ParalelProject main.cpp utils/point.cpp)
+
+# Include directories for SDL2 and utils
+target_include_directories(ParalelProject PRIVATE 
+    ${SDL2_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/utils  # Include the utils directory
+)
+
+# Link SDL2, GLM, and OpenMP
+target_link_libraries(ParalelProject PRIVATE SDL2 glm OpenMP::OpenMP_CXX)
+
+# Optional: Link SDL2 main if you want to avoid redefining `main` in SDL2
+target_link_libraries(ParalelProject PRIVATE SDL2::SDL2main)
