@@ -11,6 +11,8 @@
 
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
+const int FPS = 60;
+const int FRAME_DELAY = 1000 / FPS;
 
 struct Bubble
 {
@@ -19,6 +21,9 @@ struct Bubble
     SDL_Texture *texture;
     int limit_x;
     int limit_y;
+    SDL_Color color;
+    SDL_Color targetColor;
+    float colorChangeSpeed; // Velocidad a la que cambia el color
 };
 
 SDL_Renderer *renderer;
@@ -30,7 +35,8 @@ glm::vec2 center(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
 // Generador de números aleatorios
 std::random_device rd;  // Obtener una semilla de hardware
 std::mt19937 gen(rd()); // Inicializar el generador con la semilla
-std::uniform_int_distribution<> dis(1, 5); // Distribución uniforme para el rango de 1 a 5
+std::uniform_int_distribution<> dis(1, 100); // Distribución uniforme para el rango de 1 a 100
+std::uniform_int_distribution<> color_dis(0, 255); // Distribución uniforme para el rango de 0 a 255
 
 void spawn_bubble()
 {
@@ -38,8 +44,8 @@ void spawn_bubble()
     bubble.position = center;
 
     // Generar valores aleatorios para x y y en el rango de 1 a 5
-    int x_random = dis(gen);  // Genera un número entre 1 y 5
-    int y_random = dis(gen);  // Genera un número entre 1 y 5
+    int x_random = dis(gen);  // Genera un número entre 1 y 100
+    int y_random = dis(gen);  // Genera un número entre 1 y 100
 
     // Crear un vector de dirección aleatorio dentro del rango
     bubble.direction = glm::vec2(x_random, y_random);
@@ -48,7 +54,22 @@ void spawn_bubble()
     bubble.direction = glm::normalize(bubble.direction);
 
     // Multiplicar la dirección por la velocidad
-    bubble.direction *= 0.1f;
+    bubble.direction *= 1.0f;
+
+    // Generar un color inicial aleatorio
+    bubble.color.r = color_dis(gen);
+    bubble.color.g = color_dis(gen);
+    bubble.color.b = color_dis(gen);
+    bubble.color.a = 255; // Alpha en 255 para opacidad completa
+
+    // Generar un color objetivo aleatorio
+    bubble.targetColor.r = color_dis(gen);
+    bubble.targetColor.g = color_dis(gen);
+    bubble.targetColor.b = color_dis(gen);
+    bubble.targetColor.a = 255; // Alpha en 255 para opacidad completa
+
+    // Velocidad a la que cambia el color
+    bubble.colorChangeSpeed = 0.01f;
 
     // Cargar la imagen y crear la textura
     SDL_Surface *surface = IMG_Load("G:\\Paralle\\openmp-screensaver\\image\\bubble.png");
@@ -90,12 +111,51 @@ void change_bubble_dir()
     }
 }
 
+void update_bubble_colors()
+{
+    for (auto &bubble : bubbles)
+    {
+        // Actualizar el color de la burbuja
+        if (abs(bubble.color.r - bubble.targetColor.r) < 1 &&
+            abs(bubble.color.g - bubble.targetColor.g) < 1 &&
+            abs(bubble.color.b - bubble.targetColor.b) < 1)
+        {
+            // Si el color actual es suficientemente cercano al color objetivo, generar un nuevo color objetivo
+            bubble.color.r = bubble.targetColor.r;
+            bubble.color.g = bubble.targetColor.g;
+            bubble.color.b = bubble.targetColor.b;
+            bubble.targetColor.r = color_dis(gen);
+            bubble.targetColor.g = color_dis(gen);
+            bubble.targetColor.b = color_dis(gen);
+        }
+        else
+        {
+            // Interpolación de color
+            if (bubble.color.r < bubble.targetColor.r)
+                bubble.color.r = std::min(bubble.color.r + bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.r));
+            else
+                bubble.color.r = std::max(bubble.color.r - bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.r));
+
+            if (bubble.color.g < bubble.targetColor.g)
+                bubble.color.g = std::min(bubble.color.g + bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.g));
+            else
+                bubble.color.g = std::max(bubble.color.g - bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.g));
+
+            if (bubble.color.b < bubble.targetColor.b)
+                bubble.color.b = std::min(bubble.color.b + bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.b));
+            else
+                bubble.color.b = std::max(bubble.color.b - bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.b));
+        }
+    }
+}
+
 void render()
 {
     // Limpiar la pantalla
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     change_bubble_dir();
+    update_bubble_colors();
 
     // Dibujar las burbujas usando sus texturas
     for (auto &bubble : bubbles)
@@ -106,6 +166,9 @@ void render()
         destRect.w = bubble.limit_x;
         destRect.h = bubble.limit_y;
 
+        // Aplicar el color de modulación
+        SDL_SetTextureColorMod(bubble.texture, bubble.color.r, bubble.color.g, bubble.color.b);
+
         SDL_RenderCopy(renderer, bubble.texture, NULL, &destRect);
     }
 
@@ -115,6 +178,8 @@ void render()
 
 int main(int argc, char *argv[])
 {
+    std::cout << "Initializing SDL" << std::endl;
+
     // Pedir al usuario cuantos quiere
     if (argc != 2)
     {
@@ -178,6 +243,8 @@ int main(int argc, char *argv[])
 
     while (running)
     {
+        Uint32 frameStart = SDL_GetTicks();
+        
         while (SDL_PollEvent(&event))
         {
             if (event.type == SDL_QUIT)
@@ -197,6 +264,12 @@ int main(int argc, char *argv[])
             std::string title = "FPS: " + std::to_string(frameCount);
             SDL_SetWindowTitle(window, title.c_str());
             frameCount = 0;
+        }
+
+        Uint32 frameTime = SDL_GetTicks() - frameStart;
+        if (frameTime < FRAME_DELAY)
+        {
+            SDL_Delay(FRAME_DELAY - frameTime);
         }
     }
 
