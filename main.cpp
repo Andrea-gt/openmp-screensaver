@@ -1,8 +1,10 @@
 #include <SDL2/SDL.h>
+#include <SDL_image.h>
 #include <glm/glm.hpp>
-#include <cstdlib>
-#include <string>
 #include <vector>
+#include <iostream>
+#include <string>
+#include <random>
 #include <omp.h>
 #include "point.h"
 #include "color.h"
@@ -14,57 +16,66 @@ struct Bubble
 {
     glm::vec2 direction;
     glm::vec2 position;
-    std::vector<Point> points;
+    SDL_Texture *texture;
     int limit_x;
     int limit_y;
 };
 
 SDL_Renderer *renderer;
-
 std::vector<Bubble> bubbles;
 
 // Centro de la pantalla
 glm::vec2 center(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
 
-std::vector<std::vector<Color>> screenMatrix(SCREEN_WIDTH, std::vector<Color>(SCREEN_HEIGHT));
-
-void drawPoint(glm::vec2 position, Color color, float opacity = 1.0f)
-{
-    if (position.x < 0 || position.x >= SCREEN_WIDTH || position.y < 0 || position.y >= SCREEN_HEIGHT)
-    {
-        return;
-    }
-    // Mezcla el color con la opacidad dada
-    screenMatrix[position.x][position.y] = color * opacity + screenMatrix[position.x][position.y] * (1.0f - opacity);
-}
+// Generador de números aleatorios
+std::random_device rd;  // Obtener una semilla de hardware
+std::mt19937 gen(rd()); // Inicializar el generador con la semilla
+std::uniform_int_distribution<> dis(1, 5); // Distribución uniforme para el rango de 1 a 5
 
 void spawn_bubble()
 {
     Bubble bubble;
     bubble.position = center;
-    bubble.direction = glm::vec2(rand() % 3 - 1, rand() % 3 - 1); // Dirección aleatoria entre -1 y 1
 
-    // Si la dirección es 0,0, establecerla en 1,0
-    if (bubble.direction.x == 0 && bubble.direction.y == 0)
-    {
-        bubble.direction.x = 1;
-    }
-    
+    // Generar valores aleatorios para x y y en el rango de 1 a 5
+    int x_random = dis(gen);  // Genera un número entre 1 y 5
+    int y_random = dis(gen);  // Genera un número entre 1 y 5
+
+    // Crear un vector de dirección aleatorio dentro del rango
+    bubble.direction = glm::vec2(x_random, y_random);
+
     // Normalizar el vector de dirección
     bubble.direction = glm::normalize(bubble.direction);
 
-    // Cargar puntos desde el archivo CSV
-    bubble.points = read_points_csv("G:\\Paralle\\openmp-screensaver\\image\\output.csv");
+    // Multiplicar la dirección por la velocidad
+    bubble.direction *= 0.1f;
 
-    bubble.limit_x = 86;
-    bubble.limit_y = 86;
+    // Cargar la imagen y crear la textura
+    SDL_Surface *surface = IMG_Load("G:\\Paralle\\openmp-screensaver\\image\\bubble.png");
+    if (!surface)
+    {
+        SDL_Log("Unable to load image: %s", IMG_GetError());
+        return;
+    }
+
+    bubble.texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_FreeSurface(surface);
+
+    if (!bubble.texture)
+    {
+        SDL_Log("Unable to create texture: %s", SDL_GetError());
+        return;
+    }
+
+    // Establecer los límites de la burbuja según el tamaño de la imagen
+    SDL_QueryTexture(bubble.texture, NULL, NULL, &bubble.limit_x, &bubble.limit_y);
     bubbles.push_back(bubble);
 }
 
 void change_bubble_dir()
 {
     for (auto &bubble : bubbles)
-    {   
+    {
         // Cambiar dirección si la posición está fuera de los límites
         if (bubble.position.x <= 0 || bubble.position.x >= SCREEN_WIDTH - bubble.limit_x)
         {
@@ -86,34 +97,16 @@ void render()
     SDL_RenderClear(renderer);
     change_bubble_dir();
 
-    // Rellenar la matriz con color negro
-    #pragma omp parallel for
-    for (int y = 0; y < SCREEN_HEIGHT; y++)
-    {   
-        for (int x = 0; x < SCREEN_WIDTH; x++)
-        {
-            screenMatrix[x][y] = Color(0, 0, 0);
-        }
-    }
-
-    // Dibujar puntos para las burbujas
+    // Dibujar las burbujas usando sus texturas
     for (auto &bubble : bubbles)
     {
-        
-        for (auto &point: bubble.points) {
-            drawPoint(glm::vec2(point.x, point.y) + bubble.position, Color(point.r, point.g, point.b), point.opacity);
-        }
-    }
+        SDL_Rect destRect;
+        destRect.x = static_cast<int>(bubble.position.x);
+        destRect.y = static_cast<int>(bubble.position.y);
+        destRect.w = bubble.limit_x;
+        destRect.h = bubble.limit_y;
 
-    // Dibujar la matriz de pantalla en el renderizador
-    for (int y = 0; y < SCREEN_HEIGHT; y++)
-    {
-        for (int x = 0; x < SCREEN_WIDTH; x++)
-        {
-            Color color = screenMatrix[x][y];
-            SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
-            SDL_RenderDrawPoint(renderer, x, y);
-        }
+        SDL_RenderCopy(renderer, bubble.texture, NULL, &destRect);
     }
 
     // Presentar el renderizador en la pantalla
@@ -122,6 +115,14 @@ void render()
 
 int main(int argc, char *argv[])
 {
+    // Pedir al usuario cuantos quiere
+    if (argc != 2)
+    {
+        std::cout << "Usage: " << argv[0] << " <number of bubbles>" << std::endl;
+        return 1;
+    }
+
+    int num_bubbles = std::stoi(argv[1]);
     // Inicializar SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
     {
@@ -129,8 +130,13 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Cargar puntos desde el archivo CSV
-    spawn_bubble();
+    // Inicializar SDL_image
+    if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG))
+    {
+        SDL_Log("Failed to initialize SDL_image: %s", IMG_GetError());
+        SDL_Quit();
+        return 1;
+    }
 
     // Crear una ventana
     SDL_Window *window = SDL_CreateWindow("FPS: 0",
@@ -154,6 +160,13 @@ int main(int argc, char *argv[])
         SDL_DestroyWindow(window);
         SDL_Quit();
         return 1;
+    }
+
+    // Cargar puntos desde el archivo CSV y crear la burbuja
+    #pragma omp parallel for
+    for (int i = 0; i < num_bubbles; i++)
+    {
+        spawn_bubble();
     }
 
     bool running = true;
@@ -188,8 +201,13 @@ int main(int argc, char *argv[])
     }
 
     // Limpiar
+    for (auto &bubble : bubbles)
+    {
+        SDL_DestroyTexture(bubble.texture);
+    }
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    IMG_Quit();
     SDL_Quit();
 
     return 0;
