@@ -26,7 +26,7 @@
 
 // SDL2 library for handling graphics, events, and window management
 #include <SDL2/SDL.h>        // SDL main library
-#include <SDL_image.h>      // SDL_image extension for handling image files
+#include <SDL2/SDL_image.h>      // SDL_image extension for handling image files
 
 // GLM library for OpenGL mathematics (e.g., vectors and matrices)
 #include <glm/glm.hpp>      // GLM core functions and types
@@ -43,9 +43,8 @@
 #include <omp.h>            // OpenMP support for multi-threading
 
 // Define screen dimensions
-//const int SCREEN_WIDTH = 800;
-//const int SCREEN_HEIGHT = 600;
-int SCREEN_WIDTH, SCREEN_HEIGHT;
+const int SCREEN_WIDTH = 1920;
+const int SCREEN_HEIGHT = 1000;
 
 // Define frames per second (FPS) and frame delay
 const int FPS = 60;
@@ -54,18 +53,6 @@ const int FRAME_DELAY = 1000 / FPS;
 // To handle collisions between bubbles
 const int COLLISION_THRESHOLD = 10; // Set your desired threshold
 const Uint32 COLLISION_TIME_PERIOD = 5000; // Time period in milliseconds
-
-void initializeScreenDimensions() {
-    SDL_DisplayMode DM;
-    if (SDL_GetCurrentDisplayMode(0, &DM) != 0) {
-        // Handle the error if the display mode cannot be retrieved
-        SDL_Log("SDL_GetCurrentDisplayMode failed: %s", SDL_GetError());
-        return;
-    }
-
-    SCREEN_WIDTH = DM.w;
-    SCREEN_HEIGHT = DM.h;
-}
 
 // Structure representing a bubble
 struct Bubble
@@ -149,10 +136,13 @@ std::vector<Bubble> bubbles;       // Vector containing all bubbles
 std::random_device rd;          // Obtain a seed from hardware
 std::mt19937 gen(rd());         // Initialize the generator with the seed
 std::uniform_int_distribution<> dis(-100, 100);     // Distribution for random direction values
+
+std::uniform_int_distribution<> spawn_dis_x(100, 1700);   // Distribution for random spawn value in x
+std::uniform_int_distribution<> spawn_dis_y(100, 700);   // Distribution for random spawn value in y
 std::uniform_int_distribution<> color_dis(0, 255);      // Distribution for random color values
 
 // Function to spawn a new bubble
-void spawnBubble(std::uniform_int_distribution<> &spawn_dis_x,  std::uniform_int_distribution<> &spawn_dis_y) {
+void spawnBubble() {
     glm::vec2 spawn_point(spawn_dis_x(gen), spawn_dis_y(gen));
     Bubble bubble;
     bubble.position = spawn_point;
@@ -212,8 +202,10 @@ void spawnBubble(std::uniform_int_distribution<> &spawn_dis_x,  std::uniform_int
 // Function to change the direction of bubbles when they hit the screen borders
 void changeBubbleDirection()
 {
-    for (auto &bubble : bubbles)
+    #pragma omp parallel for
+    for (int i = 0; i < bubbles.size(); i++)
     {
+        auto &bubble = bubbles[i];
         BoundingCircle bubbleBound = getBoundingCircle(bubble);
 
         // Reverse direction if the bubble reaches the screen's edges
@@ -227,15 +219,18 @@ void changeBubbleDirection()
         }
 
         // Check for collisions with other bubbles
-        for (auto &other : bubbles) {
-            if (&bubble != &other) { 
-                BoundingCircle otherBound = getBoundingCircle(other);
+        for (int j = 0; j < bubbles.size(); j++) {
+            if (i != j) { 
+                BoundingCircle otherBound = getBoundingCircle(bubbles[j]);
                 if (isCollision(bubbleBound, otherBound)) {
-                    handleCollision(bubble, other, bubbleBound, otherBound);
+                    #pragma omp critical
+                    {
+                        handleCollision(bubble, bubbles[j], bubbleBound, otherBound);
+                    }
                 }
             }
         }
-        
+
         // Move the bubble in the current direction
         bubble.position += bubble.direction;
     }
@@ -248,8 +243,10 @@ void checkCollisions() {
     Uint32 currentTime = SDL_GetTicks(); // Get the current time in milliseconds
 
     // Iterate over each bubble to check and update collision status
-    for (auto &bubble : bubbles)
+    #pragma omp parallel for
+    for (int i = 0; i < bubbles.size(); i++)
     {
+        auto &bubble = bubbles[i];
         // Check if the bubble's collision count exceeds the threshold
         // and if the time since the last collision is less than the specified period
         if (bubble.collisionCount > COLLISION_THRESHOLD && 
@@ -277,8 +274,11 @@ void checkCollisions() {
 // Function to gradually change the bubble's color toward the target color
 void updateBubbleColors()
 {
-    for (auto &bubble : bubbles)
+    #pragma omp parallel for
+    for (int i = 0; i < bubbles.size(); i++)
     {
+        auto &bubble = bubbles[i];
+
         // If the current color is close to the target color, set a new target color
         if (abs(bubble.color.r - bubble.targetColor.r) < 1 &&
             abs(bubble.color.g - bubble.targetColor.g) < 1 &&
@@ -287,9 +287,14 @@ void updateBubbleColors()
             bubble.color.r = bubble.targetColor.r;
             bubble.color.g = bubble.targetColor.g;
             bubble.color.b = bubble.targetColor.b;
-            bubble.targetColor.r = color_dis(gen);
-            bubble.targetColor.g = color_dis(gen);
-            bubble.targetColor.b = color_dis(gen);
+
+            // Generate new target colors in a thread-safe way
+            #pragma omp critical
+            {
+                bubble.targetColor.r = color_dis(gen);
+                bubble.targetColor.g = color_dis(gen);
+                bubble.targetColor.b = color_dis(gen);
+            }
         }
         else
         {
@@ -313,7 +318,7 @@ void updateBubbleColors()
 void render()
 {
     // Clear the screen with a black background
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
     changeBubbleDirection(); // Update bubble directions
@@ -331,6 +336,7 @@ void render()
 
         // Apply color modulation to the bubble texture
         SDL_SetTextureColorMod(bubble.texture, bubble.color.r, bubble.color.g, bubble.color.b);
+
         SDL_RenderCopy(renderer, bubble.texture, NULL, &destRect);
     }
 
@@ -339,9 +345,8 @@ void render()
 }
 
 // Main function
-int main(int argc, char *argv[]){
-    int num_bubbles;    // Number of bubbles
-
+int main(int argc, char *argv[])
+{
     std::cout << "Initializing SDL" << std::endl;
 
     // Ensure the correct number of arguments is provided
@@ -351,15 +356,7 @@ int main(int argc, char *argv[]){
         return 1;
     }
 
-    // Convert command-line arguments to integers
-    char *endptr;
-    num_bubbles = strtol(argv[1], &endptr, 10);    // Number of bubbles to display
-
-    // Validate the inputs
-    if (num_bubbles <= 0 || *endptr != '\0') {
-        printf("Error: Please enter a positive integer for the number of bubbles.\n");
-        return 1;
-    }
+    int num_bubbles = std::stoi(argv[1]);
 
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
@@ -369,24 +366,19 @@ int main(int argc, char *argv[]){
     }
 
     // Initialize SDL_image
-    if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG)) {
+    if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG))
+    {
         SDL_Log("Failed to initialize SDL_image: %s", IMG_GetError());
         SDL_Quit();
         return 1;
     }
 
-    // Initialize screen dimensions
-    initializeScreenDimensions();
-    
-    std::uniform_int_distribution<> spawn_dis_x(100, SCREEN_WIDTH - 200);   // Distribution for random spawn value in x
-    std::uniform_int_distribution<> spawn_dis_y(100, SCREEN_HEIGHT - 200);   // Distribution for random spawn value in y
-
-    // Create a window with transparency
+    // Create a window
     SDL_Window *window = SDL_CreateWindow("FPS: 0",
                                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                           SCREEN_WIDTH, SCREEN_HEIGHT,
                                           SDL_WINDOW_SHOWN);
-                                          
+
     if (!window)
     {
         SDL_Log("Unable to create window: %s", SDL_GetError());
@@ -394,7 +386,8 @@ int main(int argc, char *argv[]){
         return 1;
     }
 
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    // Create a renderer
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
     if (!renderer)
     {
@@ -404,13 +397,10 @@ int main(int argc, char *argv[]){
         return 1;
     }
 
-    // Enable alpha blending for the renderer
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-
     // Spawn the bubbles
     for (int i = 0; i < num_bubbles; i++)
     {
-        spawnBubble(spawn_dis_x, spawn_dis_y);
+        spawnBubble();
     }
 
     // Variables for frame rate calculation
