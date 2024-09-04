@@ -62,6 +62,7 @@ void initializeScreenDimensions() {
         SDL_Log("SDL_GetCurrentDisplayMode failed: %s", SDL_GetError());
         return;
     }
+
     SCREEN_WIDTH = DM.w;
     SCREEN_HEIGHT = DM.h;
 }
@@ -148,13 +149,10 @@ std::vector<Bubble> bubbles;       // Vector containing all bubbles
 std::random_device rd;          // Obtain a seed from hardware
 std::mt19937 gen(rd());         // Initialize the generator with the seed
 std::uniform_int_distribution<> dis(-100, 100);     // Distribution for random direction values
-
-std::uniform_int_distribution<> spawn_dis_x(100, 700);   // Distribution for random spawn value in x
-std::uniform_int_distribution<> spawn_dis_y(100, 500);   // Distribution for random spawn value in y
 std::uniform_int_distribution<> color_dis(0, 255);      // Distribution for random color values
 
 // Function to spawn a new bubble
-void spawnBubble() {
+void spawnBubble(std::uniform_int_distribution<> &spawn_dis_x,  std::uniform_int_distribution<> &spawn_dis_y) {
     glm::vec2 spawn_point(spawn_dis_x(gen), spawn_dis_y(gen));
     Bubble bubble;
     bubble.position = spawn_point;
@@ -379,6 +377,9 @@ int main(int argc, char *argv[]){
 
     // Initialize screen dimensions
     initializeScreenDimensions();
+    
+    std::uniform_int_distribution<> spawn_dis_x(100, SCREEN_WIDTH - 200);   // Distribution for random spawn value in x
+    std::uniform_int_distribution<> spawn_dis_y(100, SCREEN_HEIGHT - 200);   // Distribution for random spawn value in y
 
     // Create a window with transparency
     SDL_Window *window = SDL_CreateWindow("FPS: 0",
@@ -413,7 +414,7 @@ int main(int argc, char *argv[]){
     // Spawn the bubbles
     for (int i = 0; i < num_bubbles; i++)
     {
-        spawnBubble();
+        spawnBubble(spawn_dis_x, spawn_dis_y);
     }
 
     // Variables for frame rate calculation
