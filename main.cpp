@@ -48,8 +48,8 @@
 int SCREEN_WIDTH, SCREEN_HEIGHT;
 
 // Define frames per second (FPS) and frame delay
-const int FPS = 60;
-const int FRAME_DELAY = 1000 / FPS;
+int FPS;
+int FRAME_DELAY;
 
 // To handle collisions between bubbles
 const int COLLISION_THRESHOLD = 10; // Set your desired threshold
@@ -65,6 +65,7 @@ void initializeScreenDimensions() {
 
     SCREEN_WIDTH = DM.w;
     SCREEN_HEIGHT = DM.h;
+
 }
 
 // Structure representing a bubble
@@ -345,15 +346,17 @@ int main(int argc, char *argv[]){
     std::cout << "Initializing SDL" << std::endl;
 
     // Ensure the correct number of arguments is provided
-    if (argc != 2)
+    if (argc != 3)
     {
-        std::cout << "Usage: " << argv[0] << " <number of bubbles>" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <Number of Bubbles> <Target FPS>" << std::endl;
         return 1;
     }
 
     // Convert command-line arguments to integers
     char *endptr;
     num_bubbles = strtol(argv[1], &endptr, 10);    // Number of bubbles to display
+    FPS = strtol(argv[2], &endptr, 10);
+    FRAME_DELAY = 1000 / FPS;
 
     // Validate the inputs
     if (num_bubbles <= 0 || *endptr != '\0') {
@@ -459,13 +462,11 @@ int main(int argc, char *argv[]){
             currentTime = frameEnd; // Update the current time
         }
 
-        // Uncomment to apply FPS target
-        // This has been disabled for testing purposes
-        /*Uint32 frameDelay = SDL_GetTicks() - frameStart;
+        Uint32 frameDelay = SDL_GetTicks() - frameStart;
         if (frameDelay < FRAME_DELAY)
         {
             SDL_Delay(FRAME_DELAY - frameDelay);
-        }*/
+        }
     }
 
     // Clean up resources

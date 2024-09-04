@@ -26,7 +26,7 @@
 
 // SDL2 library for handling graphics, events, and window management
 #include <SDL2/SDL.h>        // SDL main library
-#include <SDL2/SDL_image.h>      // SDL_image extension for handling image files
+#include <SDL_image.h>      // SDL_image extension for handling image files
 
 // GLM library for OpenGL mathematics (e.g., vectors and matrices)
 #include <glm/glm.hpp>      // GLM core functions and types
@@ -47,8 +47,8 @@ const int SCREEN_WIDTH = 1920;
 const int SCREEN_HEIGHT = 1000;
 
 // Define frames per second (FPS) and frame delay
-const int FPS = 60;
-const int FRAME_DELAY = 1000 / FPS;
+int FPS;
+int FRAME_DELAY;
 
 // To handle collisions between bubbles
 const int COLLISION_THRESHOLD = 10; // Set your desired threshold
@@ -350,13 +350,15 @@ int main(int argc, char *argv[])
     std::cout << "Initializing SDL" << std::endl;
 
     // Ensure the correct number of arguments is provided
-    if (argc != 2)
+    if (argc != 3)
     {
-        std::cout << "Usage: " << argv[0] << " <number of bubbles>" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <Number of Bubbles> <Target FPS>" << std::endl;
         return 1;
     }
 
     int num_bubbles = std::stoi(argv[1]);
+    FPS = std::stoi(argv[2]);
+    FRAME_DELAY = 1000 / FPS;
 
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
@@ -449,13 +451,11 @@ int main(int argc, char *argv[])
             currentTime = frameEnd; // Update the current time
         }
 
-        // Uncomment to apply FPS target
-        // This has been disabled for testing purposes
-        /*Uint32 frameDelay = SDL_GetTicks() - frameStart;
+        Uint32 frameDelay = SDL_GetTicks() - frameStart;
         if (frameDelay < FRAME_DELAY)
         {
             SDL_Delay(FRAME_DELAY - frameDelay);
-        }*/
+        }
     }
 
     // Clean up resources
