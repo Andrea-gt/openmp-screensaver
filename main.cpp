@@ -189,7 +189,7 @@ void spawnBubble(std::uniform_int_distribution<> &spawn_dis_x,  std::uniform_int
     bubble.colorChangeSpeed = 0.01f;
 
     // Load the bubble image and create a texture
-    SDL_Surface *surface = IMG_Load("image/bubble.png");
+    SDL_Surface *surface = IMG_Load("../image/bubble.png");
     if (!surface)
     {
         SDL_Log("Unable to load image: %s", IMG_GetError());
@@ -353,16 +353,23 @@ int main(int argc, char *argv[]){
     }
 
     // Convert command-line arguments to integers
-    char *endptr;
-    num_bubbles = strtol(argv[1], &endptr, 10);    // Number of bubbles to display
-    FPS = strtol(argv[2], &endptr, 10);
-    FRAME_DELAY = 1000 / FPS;
+    char *endptr1, *endptr2;
+    num_bubbles = strtol(argv[1], &endptr1, 10);    // Number of bubbles to display
+    FPS = strtol(argv[2], &endptr2, 10); // Number of desired FPS
 
-    // Validate the inputs
-    if (num_bubbles <= 0 || *endptr != '\0') {
+    // Validate the input
+    if (num_bubbles <= 0 || *endptr1 != '\0') {
         printf("Error: Please enter a positive integer for the number of bubbles.\n");
         return 1;
     }
+
+    // Validate the input
+    if (FPS <= 0 || *endptr2 != '\0') {
+        printf("Error: Please enter a positive integer for the number of FPS.\n");
+        return 1;
+    }
+
+    FRAME_DELAY = 1000 / FPS;
 
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0)

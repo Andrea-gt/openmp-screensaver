@@ -1,5 +1,5 @@
 /**
- * Bubble Screensaver
+ * Bubble Screensaver (With OpenMP)
  *
  * @brief
  * This program creates a screensaver-like animation with bubbles that move around the screen. The bubbles 
@@ -43,8 +43,7 @@
 #include <omp.h>            // OpenMP support for multi-threading
 
 // Define screen dimensions
-const int SCREEN_WIDTH = 1920;
-const int SCREEN_HEIGHT = 1000;
+int SCREEN_WIDTH, SCREEN_HEIGHT;
 
 // Define frames per second (FPS) and frame delay
 int FPS;
@@ -53,6 +52,19 @@ int FRAME_DELAY;
 // To handle collisions between bubbles
 const int COLLISION_THRESHOLD = 10; // Set your desired threshold
 const Uint32 COLLISION_TIME_PERIOD = 5000; // Time period in milliseconds
+
+void initializeScreenDimensions() {
+    SDL_DisplayMode DM;
+    if (SDL_GetCurrentDisplayMode(0, &DM) != 0) {
+        // Handle the error if the display mode cannot be retrieved
+        SDL_Log("SDL_GetCurrentDisplayMode failed: %s", SDL_GetError());
+        return;
+    }
+
+    SCREEN_WIDTH = DM.w;
+    SCREEN_HEIGHT = DM.h;
+
+}
 
 // Structure representing a bubble
 struct Bubble
@@ -178,7 +190,7 @@ void spawnBubble() {
     bubble.colorChangeSpeed = 0.01f;
 
     // Load the bubble image and create a texture
-    SDL_Surface *surface = IMG_Load("image/bubble.png");
+    SDL_Surface *surface = IMG_Load("../image/bubble.png");
     if (!surface)
     {
         SDL_Log("Unable to load image: %s", IMG_GetError());
@@ -374,6 +386,12 @@ int main(int argc, char *argv[])
         SDL_Quit();
         return 1;
     }
+
+    // Initialize screen dimensions
+    initializeScreenDimensions();
+    
+    std::uniform_int_distribution<> spawn_dis_x(100, SCREEN_WIDTH - 200);   // Distribution for random spawn value in x
+    std::uniform_int_distribution<> spawn_dis_y(100, SCREEN_HEIGHT - 200);   // Distribution for random spawn value in y
 
     // Create a window
     SDL_Window *window = SDL_CreateWindow("FPS: 0",
