@@ -43,8 +43,9 @@
 #include <omp.h>            // OpenMP support for multi-threading
 
 // Define screen dimensions
-const int SCREEN_WIDTH = 800;
-const int SCREEN_HEIGHT = 600;
+//const int SCREEN_WIDTH = 800;
+//const int SCREEN_HEIGHT = 600;
+int SCREEN_WIDTH, SCREEN_HEIGHT;
 
 // Define frames per second (FPS) and frame delay
 const int FPS = 60;
@@ -53,6 +54,17 @@ const int FRAME_DELAY = 1000 / FPS;
 // To handle collisions between bubbles
 const int COLLISION_THRESHOLD = 10; // Set your desired threshold
 const Uint32 COLLISION_TIME_PERIOD = 5000; // Time period in milliseconds
+
+void initializeScreenDimensions() {
+    SDL_DisplayMode DM;
+    if (SDL_GetCurrentDisplayMode(0, &DM) != 0) {
+        // Handle the error if the display mode cannot be retrieved
+        SDL_Log("SDL_GetCurrentDisplayMode failed: %s", SDL_GetError());
+        return;
+    }
+    SCREEN_WIDTH = DM.w;
+    SCREEN_HEIGHT = DM.h;
+}
 
 // Structure representing a bubble
 struct Bubble
@@ -79,32 +91,11 @@ struct Bubble
 
 };
 
-struct BoundingBox
-{
-    float x; // Top-left corner x-coordinate
-    float y; // Top-left corner y-coordinate
-    float width;  // Width of the bounding box
-    float height; // Height of the bounding box
-};
-
 struct BoundingCircle
 {
     glm::vec2 center; // Center of the circle
     float radius;     // Radius of the circle
 };
-
-// Function to get the bounding box of a bubble
-// This function computes the rectangular bounding box that encapsulates the bubble.
-// It is used for collision detection and rendering purposes.
-BoundingBox getBoundingBox(const Bubble &bubble)
-{
-    BoundingBox box;
-    box.x = bubble.position.x;                   // X-coordinate of the top-left corner
-    box.y = bubble.position.y;                   // Y-coordinate of the top-left corner
-    box.width = static_cast<float>(bubble.limit_x); // Width of the bounding box, based on bubble texture width
-    box.height = static_cast<float>(bubble.limit_y); // Height of the bounding box, based on bubble texture height
-    return box;
-}
 
 // Function to get the bounding circle of a bubble
 // This function calculates the circular bounding area that approximates the bubble.
@@ -324,7 +315,7 @@ void updateBubbleColors()
 void render()
 {
     // Clear the screen with a black background
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
     SDL_RenderClear(renderer);
 
     changeBubbleDirection(); // Update bubble directions
@@ -342,7 +333,6 @@ void render()
 
         // Apply color modulation to the bubble texture
         SDL_SetTextureColorMod(bubble.texture, bubble.color.r, bubble.color.g, bubble.color.b);
-
         SDL_RenderCopy(renderer, bubble.texture, NULL, &destRect);
     }
 
@@ -351,8 +341,9 @@ void render()
 }
 
 // Main function
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]){
+    int num_bubbles;    // Number of bubbles
+
     std::cout << "Initializing SDL" << std::endl;
 
     // Ensure the correct number of arguments is provided
@@ -362,7 +353,15 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    int num_bubbles = std::stoi(argv[1]);
+    // Convert command-line arguments to integers
+    char *endptr;
+    num_bubbles = strtol(argv[1], &endptr, 10);    // Number of bubbles to display
+
+    // Validate the inputs
+    if (num_bubbles <= 0 || *endptr != '\0') {
+        printf("Error: Please enter a positive integer for the number of bubbles.\n");
+        return 1;
+    }
 
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
@@ -372,28 +371,33 @@ int main(int argc, char *argv[])
     }
 
     // Initialize SDL_image
-    if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG))
-    {
+    if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG)) {
         SDL_Log("Failed to initialize SDL_image: %s", IMG_GetError());
         SDL_Quit();
         return 1;
     }
 
-    // Create a window
+    // Initialize screen dimensions
+    initializeScreenDimensions();
+
+    // Create a window with transparency
     SDL_Window *window = SDL_CreateWindow("FPS: 0",
                                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                           SCREEN_WIDTH, SCREEN_HEIGHT,
                                           SDL_WINDOW_SHOWN);
-
+                                          
     if (!window)
     {
         SDL_Log("Unable to create window: %s", SDL_GetError());
         SDL_Quit();
         return 1;
     }
+    
 
-    // Create a renderer
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    // Set the window opacity to transparent background (0.5 for semi-transparent, 1.0 for fully opaque)
+    SDL_SetWindowOpacity(window, 0.0f);
+
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
     if (!renderer)
     {
@@ -402,6 +406,9 @@ int main(int argc, char *argv[])
         SDL_Quit();
         return 1;
     }
+
+    // Enable alpha blending for the renderer
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
     // Spawn the bubbles
     for (int i = 0; i < num_bubbles; i++)
