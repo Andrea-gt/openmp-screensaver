@@ -42,6 +42,7 @@ find_package(OpenMP REQUIRED)
 
 # Define your executable
 add_executable(BubbleScreensaver main.cpp)
+add_executable(BubbleScreensaverParallel mainParallel.cpp)
 
 # Include directories for SDL2, SDL2_image, and utils
 target_include_directories(BubbleScreensaver PRIVATE 
@@ -50,8 +51,16 @@ target_include_directories(BubbleScreensaver PRIVATE
     ${CMAKE_SOURCE_DIR}/utils  # Include the utils directory
 )
 
+target_include_directories(BubbleScreensaverParallel PRIVATE 
+    ${SDL2_SOURCE_DIR}/include
+    ${SDL2_image_SOURCE_DIR}/include  # Asegúrate de que esta ruta apunte correctamente al directorio que contiene SDL_image.h
+    ${CMAKE_SOURCE_DIR}/utils  # Include the utils directory
+)
+
 # Link SDL2, SDL2_image, GLM, and OpenMP
 target_link_libraries(BubbleScreensaver PRIVATE SDL2::SDL2-static SDL2_image::SDL2_image-static glm OpenMP::OpenMP_CXX)
+target_link_libraries(BubbleScreensaverParallel PRIVATE SDL2::SDL2-static SDL2_image::SDL2_image-static glm OpenMP::OpenMP_CXX)
 
 # Optional: Link SDL2 main if you want to avoid redefining `main` in SDL2
 target_link_libraries(BubbleScreensaver PRIVATE SDL2::SDL2main)
+target_link_libraries(BubbleScreensaverParallel PRIVATE SDL2::SDL2main)
