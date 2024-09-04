@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(ParalelProject)
+project(BubbleScreensaver)
 
 # Set the C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -41,17 +41,17 @@ FetchContent_MakeAvailable(SDL2_image)
 find_package(OpenMP REQUIRED)
 
 # Define your executable
-add_executable(ParalelProject main.cpp utils/point.cpp)
+add_executable(BubbleScreensaver main.cpp)
 
 # Include directories for SDL2, SDL2_image, and utils
-target_include_directories(ParalelProject PRIVATE 
+target_include_directories(BubbleScreensaver PRIVATE 
     ${SDL2_SOURCE_DIR}/include
     ${SDL2_image_SOURCE_DIR}/include  # Asegúrate de que esta ruta apunte correctamente al directorio que contiene SDL_image.h
     ${CMAKE_SOURCE_DIR}/utils  # Include the utils directory
 )
 
 # Link SDL2, SDL2_image, GLM, and OpenMP
-target_link_libraries(ParalelProject PRIVATE SDL2::SDL2-static SDL2_image::SDL2_image-static glm OpenMP::OpenMP_CXX)
+target_link_libraries(BubbleScreensaver PRIVATE SDL2::SDL2-static SDL2_image::SDL2_image-static glm OpenMP::OpenMP_CXX)
 
 # Optional: Link SDL2 main if you want to avoid redefining `main` in SDL2
-target_link_libraries(ParalelProject PRIVATE SDL2::SDL2main)
+target_link_libraries(BubbleScreensaver PRIVATE SDL2::SDL2main)

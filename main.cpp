@@ -1,78 +1,205 @@
-#include <SDL2/SDL.h>
-#include <SDL_image.h>
-#include <glm/glm.hpp>
-#include <vector>
-#include <iostream>
-#include <string>
-#include <random>
-#include <omp.h>
-#include "point.h"
-#include "color.h"
+/**
+ * Bubble Screensaver
+ *
+ * @brief
+ * This program creates a screensaver-like animation with bubbles that move around the screen. The bubbles 
+ * originate from the center of the screen and move in random directions. Each bubble changes its color 
+ * gradually over time. The program utilizes SDL2 for rendering, SDL_image for loading images, and OpenMP 
+ * for parallel bubble generation.
+ *
+ * @author Valdez D., Flores A., Ramirez A. 
+ * @date Sep 2024
+ * @note Documentation generated with ChatGPT
+ *
+ * @usage:
+ *  Compile the program with the required SDL2 and SDL_image libraries. 
+ *  Run the program with the command:
+ *      ./BubbleScreensaver <number of bubbles>
+ *  Replace <number of bubbles> with the desired number of bubbles to display.
+ *
+ * @libraries:
+ *  - SDL2
+ *  - SDL_image
+ *  - GLM (for vector mathematics)
+ *  - OpenMP (for parallel processing)
+**/
 
+// SDL2 library for handling graphics, events, and window management
+#include <SDL2/SDL.h>        // SDL main library
+#include <SDL_image.h>      // SDL_image extension for handling image files
+
+// GLM library for OpenGL mathematics (e.g., vectors and matrices)
+#include <glm/glm.hpp>      // GLM core functions and types
+
+// Standard C++ libraries for various functionalities
+#include <vector>           // STL vector container
+#include <iostream>         // For input and output operations
+#include <string>           // For string handling
+
+// Random number generation
+#include <random>           // For random number generation
+
+// OpenMP library for parallel programming (if needed for parallel execution)
+#include <omp.h>            // OpenMP support for multi-threading
+
+// Define screen dimensions
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
+
+// Define frames per second (FPS) and frame delay
 const int FPS = 60;
 const int FRAME_DELAY = 1000 / FPS;
 
+// To handle collisions between bubbles
+const int COLLISION_THRESHOLD = 10; // Set your desired threshold
+const Uint32 COLLISION_TIME_PERIOD = 5000; // Time period in milliseconds
+
+// Structure representing a bubble
 struct Bubble
 {
-    glm::vec2 direction;
-    glm::vec2 position;
-    SDL_Texture *texture;
-    int limit_x;
-    int limit_y;
-    SDL_Color color;
-    SDL_Color targetColor;
-    float colorChangeSpeed; // Velocidad a la que cambia el color
+    glm::vec2 direction;      // Direction vector for the bubble's movement
+    glm::vec2 position;       // Current position of the bubble
+    SDL_Texture *texture;     // Texture of the bubble image
+    int limit_x;              // Width of the bubble texture
+    int limit_y;              // Height of the bubble texture
+    SDL_Color color;          // Current color of the bubble
+    SDL_Color targetColor;    // Target color for the bubble
+    float colorChangeSpeed;   // Speed at which the color changes
+    int collisionCount;       // Number of collisions detected
+    Uint32 lastCollisionTime; // Time of the last collision detection
+    bool isCollisionActive;     // Flag to activate/deactivate collision detection
+
+    // Equality operator to compare two Bubble objects
+    // Reference --> https://stackoverflow.com/questions/16843323/c-object-equality
+    bool operator != (const Bubble &other) const
+    {
+        return (position == other.position && direction == other.direction &&
+                color.r == other.color.r && color.g == other.color.g && color.b == other.color.b);
+    }
+
 };
 
-SDL_Renderer *renderer;
-std::vector<Bubble> bubbles;
-
-// Centro de la pantalla
-glm::vec2 center(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
-
-// Generador de números aleatorios
-std::random_device rd;  // Obtener una semilla de hardware
-std::mt19937 gen(rd()); // Inicializar el generador con la semilla
-std::uniform_int_distribution<> dis(1, 100); // Distribución uniforme para el rango de 1 a 100
-std::uniform_int_distribution<> color_dis(0, 255); // Distribución uniforme para el rango de 0 a 255
-
-void spawn_bubble()
+struct BoundingBox
 {
+    float x; // Top-left corner x-coordinate
+    float y; // Top-left corner y-coordinate
+    float width;  // Width of the bounding box
+    float height; // Height of the bounding box
+};
+
+struct BoundingCircle
+{
+    glm::vec2 center; // Center of the circle
+    float radius;     // Radius of the circle
+};
+
+// Function to get the bounding box of a bubble
+// This function computes the rectangular bounding box that encapsulates the bubble.
+// It is used for collision detection and rendering purposes.
+BoundingBox getBoundingBox(const Bubble &bubble)
+{
+    BoundingBox box;
+    box.x = bubble.position.x;                   // X-coordinate of the top-left corner
+    box.y = bubble.position.y;                   // Y-coordinate of the top-left corner
+    box.width = static_cast<float>(bubble.limit_x); // Width of the bounding box, based on bubble texture width
+    box.height = static_cast<float>(bubble.limit_y); // Height of the bounding box, based on bubble texture height
+    return box;
+}
+
+// Function to get the bounding circle of a bubble
+// This function calculates the circular bounding area that approximates the bubble.
+// It is used for more accurate collision detection when bubbles are round.
+BoundingCircle getBoundingCircle(const Bubble &bubble)
+{
+    BoundingCircle circle;
+    // Calculate the center of the bounding circle based on bubble position and texture dimensions
+    circle.center = bubble.position + glm::vec2(bubble.limit_x / 2, bubble.limit_y / 2);
+    // Radius of the bounding circle, chosen as the smallest dimension divided by 2
+    circle.radius = std::min(bubble.limit_x, bubble.limit_y) / 2.0f;
+    return circle;
+}
+
+// Function to check if two circles collide
+// This function determines if two bounding circles overlap.
+// It returns true if the circles intersect, indicating a collision.
+bool isCollision(const BoundingCircle &circle1, const BoundingCircle &circle2)
+{
+    // Calculate the distance between the centers of the two circles
+    float distance = glm::distance(circle1.center, circle2.center);
+    // Check if the distance is less than the sum of the radii (collision condition)
+    return distance < (circle1.radius + circle2.radius);
+}
+
+// Function to handle collision between two bubbles
+// This function updates the direction of the bubbles if they collide,
+// and increments their collision counts if collision handling is active.
+void handleCollision(Bubble &bubble, Bubble &other, BoundingCircle &bubbleBound, BoundingCircle &otherBound) {
+    // Check if collision handling is active for both bubbles
+    if (bubble.isCollisionActive && other.isCollisionActive) {
+        // Calculate the normal vector at the collision point
+        glm::vec2 collision_normal = glm::normalize(otherBound.center - bubbleBound.center);
+        // Calculate the dot product of the bubble's direction and collision normal
+        float dot_product = glm::dot(bubble.direction, collision_normal);
+        // Reflect the bubble's direction off the collision normal
+        bubble.direction -= 2.0f * dot_product * collision_normal;
+
+        // Update the collision count for both bubbles
+        bubble.collisionCount++;
+        other.collisionCount++;
+    }
+}
+
+// Global variables
+SDL_Renderer *renderer;            // SDL Renderer
+std::vector<Bubble> bubbles;       // Vector containing all bubbles
+
+// Random number generator
+std::random_device rd;          // Obtain a seed from hardware
+std::mt19937 gen(rd());         // Initialize the generator with the seed
+std::uniform_int_distribution<> dis(-100, 100);     // Distribution for random direction values
+
+std::uniform_int_distribution<> spawn_dis_x(100, 700);   // Distribution for random spawn value in x
+std::uniform_int_distribution<> spawn_dis_y(100, 500);   // Distribution for random spawn value in y
+std::uniform_int_distribution<> color_dis(0, 255);      // Distribution for random color values
+
+// Function to spawn a new bubble
+void spawnBubble() {
+    glm::vec2 spawn_point(spawn_dis_x(gen), spawn_dis_y(gen));
     Bubble bubble;
-    bubble.position = center;
+    bubble.position = spawn_point;
 
-    // Generar valores aleatorios para x y y en el rango de 1 a 5
-    int x_random = dis(gen);  // Genera un número entre 1 y 100
-    int y_random = dis(gen);  // Genera un número entre 1 y 100
+    // Generate random direction values within a range
+    int x_random, y_random = 0;
 
-    // Crear un vector de dirección aleatorio dentro del rango
+    do {
+        x_random = dis(gen);
+        y_random = dis(gen);
+    } while (x_random == 0 && y_random == 0); // Keep generating until it's not zero
+
+    // Create a direction vector and normalize it
     bubble.direction = glm::vec2(x_random, y_random);
-
-    // Normalizar el vector de dirección
     bubble.direction = glm::normalize(bubble.direction);
 
-    // Multiplicar la dirección por la velocidad
+    // Set a fixed speed for the bubble
     bubble.direction *= 1.0f;
 
-    // Generar un color inicial aleatorio
+    // Generate a random initial color for the bubble
     bubble.color.r = color_dis(gen);
     bubble.color.g = color_dis(gen);
     bubble.color.b = color_dis(gen);
-    bubble.color.a = 255; // Alpha en 255 para opacidad completa
+    bubble.color.a = 255; // Full opacity
 
-    // Generar un color objetivo aleatorio
+    // Generate a random target color for the bubble
     bubble.targetColor.r = color_dis(gen);
     bubble.targetColor.g = color_dis(gen);
     bubble.targetColor.b = color_dis(gen);
-    bubble.targetColor.a = 255; // Alpha en 255 para opacidad completa
+    bubble.targetColor.a = 255; // Full opacity
 
-    // Velocidad a la que cambia el color
+    // Set the color change speed
     bubble.colorChangeSpeed = 0.01f;
 
-    // Cargar la imagen y crear la textura
-    SDL_Surface *surface = IMG_Load("G:\\Paralle\\openmp-screensaver\\image\\bubble.png");
+    // Load the bubble image and create a texture
+    SDL_Surface *surface = IMG_Load("/home/andrea/Documents/python-environment/Paralela/openmp-screensaver/image/bubble.png");
     if (!surface)
     {
         SDL_Log("Unable to load image: %s", IMG_GetError());
@@ -88,16 +215,19 @@ void spawn_bubble()
         return;
     }
 
-    // Establecer los límites de la burbuja según el tamaño de la imagen
+    // Set the texture's dimensions as the bubble's limits
     SDL_QueryTexture(bubble.texture, NULL, NULL, &bubble.limit_x, &bubble.limit_y);
     bubbles.push_back(bubble);
 }
 
-void change_bubble_dir()
+// Function to change the direction of bubbles when they hit the screen borders
+void changeBubbleDirection()
 {
     for (auto &bubble : bubbles)
     {
-        // Cambiar dirección si la posición está fuera de los límites
+        BoundingCircle bubbleBound = getBoundingCircle(bubble);
+
+        // Reverse direction if the bubble reaches the screen's edges
         if (bubble.position.x <= 0 || bubble.position.x >= SCREEN_WIDTH - bubble.limit_x)
         {
             bubble.direction.x *= -1;
@@ -106,21 +236,65 @@ void change_bubble_dir()
         {
             bubble.direction.y *= -1;
         }
-        // Mover la burbuja
+
+        // Check for collisions with other bubbles
+        for (auto &other : bubbles) {
+            if (&bubble != &other) { 
+                BoundingCircle otherBound = getBoundingCircle(other);
+                if (isCollision(bubbleBound, otherBound)) {
+                    handleCollision(bubble, other, bubbleBound, otherBound);
+                }
+            }
+        }
+        
+        // Move the bubble in the current direction
         bubble.position += bubble.direction;
     }
 }
 
-void update_bubble_colors()
+// Function to check and update collision states for all bubbles
+// This function manages the activation of collision detection based on the bubble's collision history
+// and the elapsed time since the last collision.
+void checkCollisions() {
+    Uint32 currentTime = SDL_GetTicks(); // Get the current time in milliseconds
+
+    // Iterate over each bubble to check and update collision status
+    for (auto &bubble : bubbles)
+    {
+        // Check if the bubble's collision count exceeds the threshold
+        // and if the time since the last collision is less than the specified period
+        if (bubble.collisionCount > COLLISION_THRESHOLD && 
+            currentTime - bubble.lastCollisionTime < COLLISION_TIME_PERIOD)
+        {
+            // Deactivate collision detection for this bubble
+            bubble.isCollisionActive = false;
+        }
+        else
+        {
+            // Activate collision detection for this bubble
+            bubble.isCollisionActive = true;
+        }
+
+        // Check if the time period since the last collision has passed
+        if (currentTime - bubble.lastCollisionTime >= COLLISION_TIME_PERIOD)
+        {
+            // Reset the collision count and update the last collision time
+            bubble.collisionCount = 0;
+            bubble.lastCollisionTime = currentTime;
+        }
+    }
+}
+
+// Function to gradually change the bubble's color toward the target color
+void updateBubbleColors()
 {
     for (auto &bubble : bubbles)
     {
-        // Actualizar el color de la burbuja
+        // If the current color is close to the target color, set a new target color
         if (abs(bubble.color.r - bubble.targetColor.r) < 1 &&
             abs(bubble.color.g - bubble.targetColor.g) < 1 &&
             abs(bubble.color.b - bubble.targetColor.b) < 1)
         {
-            // Si el color actual es suficientemente cercano al color objetivo, generar un nuevo color objetivo
             bubble.color.r = bubble.targetColor.r;
             bubble.color.g = bubble.targetColor.g;
             bubble.color.b = bubble.targetColor.b;
@@ -130,34 +304,34 @@ void update_bubble_colors()
         }
         else
         {
-            // Interpolación de color
-            if (bubble.color.r < bubble.targetColor.r)
-                bubble.color.r = std::min(bubble.color.r + bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.r));
-            else
-                bubble.color.r = std::max(bubble.color.r - bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.r));
+            // Interpolate the bubble's color toward the target color
+            bubble.color.r = (bubble.color.r < bubble.targetColor.r)
+                ? std::min(bubble.color.r + bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.r))
+                : std::max(bubble.color.r - bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.r));
 
-            if (bubble.color.g < bubble.targetColor.g)
-                bubble.color.g = std::min(bubble.color.g + bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.g));
-            else
-                bubble.color.g = std::max(bubble.color.g - bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.g));
+            bubble.color.g = (bubble.color.g < bubble.targetColor.g)
+                ? std::min(bubble.color.g + bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.g))
+                : std::max(bubble.color.g - bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.g));
 
-            if (bubble.color.b < bubble.targetColor.b)
-                bubble.color.b = std::min(bubble.color.b + bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.b));
-            else
-                bubble.color.b = std::max(bubble.color.b - bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.b));
+            bubble.color.b = (bubble.color.b < bubble.targetColor.b)
+                ? std::min(bubble.color.b + bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.b))
+                : std::max(bubble.color.b - bubble.colorChangeSpeed * 255, static_cast<float>(bubble.targetColor.b));
         }
     }
 }
 
+// Function to render bubbles on the screen
 void render()
 {
-    // Limpiar la pantalla
+    // Clear the screen with a black background
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
-    change_bubble_dir();
-    update_bubble_colors();
 
-    // Dibujar las burbujas usando sus texturas
+    changeBubbleDirection(); // Update bubble directions
+    checkCollisions(); // Check and deactivate collisions if necessary
+    updateBubbleColors(); // Update bubble colors
+
+    // Draw each bubble
     for (auto &bubble : bubbles)
     {
         SDL_Rect destRect;
@@ -166,21 +340,22 @@ void render()
         destRect.w = bubble.limit_x;
         destRect.h = bubble.limit_y;
 
-        // Aplicar el color de modulación
+        // Apply color modulation to the bubble texture
         SDL_SetTextureColorMod(bubble.texture, bubble.color.r, bubble.color.g, bubble.color.b);
 
         SDL_RenderCopy(renderer, bubble.texture, NULL, &destRect);
     }
 
-    // Presentar el renderizador en la pantalla
+    // Present the rendered frame on the screen
     SDL_RenderPresent(renderer);
 }
 
+// Main function
 int main(int argc, char *argv[])
 {
     std::cout << "Initializing SDL" << std::endl;
 
-    // Pedir al usuario cuantos quiere
+    // Ensure the correct number of arguments is provided
     if (argc != 2)
     {
         std::cout << "Usage: " << argv[0] << " <number of bubbles>" << std::endl;
@@ -188,14 +363,15 @@ int main(int argc, char *argv[])
     }
 
     int num_bubbles = std::stoi(argv[1]);
-    // Inicializar SDL
+
+    // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
     {
         SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
         return 1;
     }
 
-    // Inicializar SDL_image
+    // Initialize SDL_image
     if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG))
     {
         SDL_Log("Failed to initialize SDL_image: %s", IMG_GetError());
@@ -203,7 +379,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Crear una ventana
+    // Create a window
     SDL_Window *window = SDL_CreateWindow("FPS: 0",
                                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                           SCREEN_WIDTH, SCREEN_HEIGHT,
@@ -216,7 +392,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Crear un renderizador
+    // Create a renderer
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
     if (!renderer)
@@ -227,23 +403,23 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Cargar puntos desde el archivo CSV y crear la burbuja
-    #pragma omp parallel for
+    // Spawn the bubbles
     for (int i = 0; i < num_bubbles; i++)
     {
-        spawn_bubble();
+        spawnBubble();
     }
 
+    // Variables for frame rate calculation
     bool running = true;
     SDL_Event event;
-
     int frameCount = 0;
     Uint32 startTime = SDL_GetTicks();
     Uint32 currentTime = startTime;
 
+    // Main loop
     while (running)
     {
-        Uint32 frameStart = SDL_GetTicks();
+        Uint32 frameStart = SDL_GetTicks(); // Get the time at the start of the frame
         
         while (SDL_PollEvent(&event))
         {
@@ -253,11 +429,11 @@ int main(int argc, char *argv[])
             }
         }
 
-        // Renderizar el frame
+        // Render the bubbles
         render();
         frameCount++;
 
-        // Calcular y mostrar FPS
+        // Calculate the frame time and update the FPS in the window title
         if (SDL_GetTicks() - currentTime >= 1000)
         {
             currentTime = SDL_GetTicks();
@@ -273,11 +449,12 @@ int main(int argc, char *argv[])
         }
     }
 
-    // Limpiar
+    // Clean up resources
     for (auto &bubble : bubbles)
     {
         SDL_DestroyTexture(bubble.texture);
     }
+
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     IMG_Quit();
