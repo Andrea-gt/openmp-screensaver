@@ -357,8 +357,9 @@ void render()
 }
 
 // Main function
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]){
+    int num_bubbles;    // Number of bubbles
+
     std::cout << "Initializing SDL" << std::endl;
 
     // Ensure the correct number of arguments is provided
@@ -368,9 +369,22 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    int num_bubbles = std::stoi(argv[1]);
-    FPS = std::stoi(argv[2]);
-    FRAME_DELAY = 1000 / FPS;
+    // Convert command-line arguments to integers
+    char *endptr1, *endptr2;
+    num_bubbles = strtol(argv[1], &endptr1, 10);    // Number of bubbles to display
+    FPS = strtol(argv[2], &endptr2, 10); // Number of desired FPS
+
+    // Validate the input
+    if (num_bubbles <= 0 || *endptr1 != '\0') {
+        printf("Error: Please enter a positive integer for the number of bubbles.\n");
+        return 1;
+    }
+
+    // Validate the input
+    if (FPS <= 0 || *endptr2 != '\0') {
+        printf("Error: Please enter a positive integer for the number of FPS.\n");
+        return 1;
+    }
 
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
